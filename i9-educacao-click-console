@@ -1,0 +1,163 @@
+(function() {
+    'use strict';
+
+    const CONFIG = {
+        intervalo: 120000,
+        verificacaoInicial: 3000,
+        duracaoToast: 2000,
+        seletores: [
+            "button:has(img[alt='Avançar'])",
+            "button:has(span:has-text('Próxima aula'))",
+            "button:has(p:has-text('Próxima aula'))",
+            "button:has(img[src*='next'])",
+            "button img[alt='Avançar']",
+            "img[alt='Avançar']",
+        ],
+    };
+
+    const STATE_KEY = 'i9educacao_auto_ativado';
+    
+    // ADAPTAÇÃO PARA O CONSOLE: Usa localStorage em vez de GM_getValue
+    const salvedState = localStorage.getItem(STATE_KEY);
+    let ativo = salvedState === null ? true : salvedState === 'true';
+    
+    let timer = null;
+    let contador = 0;
+    let contadorTimer = null;
+    let painelEl = null;
+
+    function encontrarBotao() {
+        for (const s of CONFIG.seletores) {
+            try {
+                const el = document.querySelector(s);
+                if (el) {
+                    if (el.tagName === 'BUTTON') {
+                        if (!el.disabled && el.offsetParent) return el;
+                    } else {
+                        const parent = el.closest('button');
+                        if (parent && !parent.disabled && parent.offsetParent) return parent;
+                    }
+                }
+            } catch (_) {}
+        }
+        return null;
+    }
+
+    function tentarClicar() {
+        if (!ativo) return;
+        const btn = encontrarBotao();
+        if (btn) {
+            btn.click();
+            contador = CONFIG.intervalo / 1000;
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(tentarClicar, CONFIG.intervalo);
+            atualizarPainel();
+        } else {
+            timer = setTimeout(tentarClicar, CONFIG.verificacaoInicial);
+        }
+    }
+
+    function formatarTempo(seg) {
+        const m = Math.floor(seg / 60);
+        const s = seg % 60;
+        return `${m}:${String(s).padStart(2, '0')}`;
+    }
+
+    function atualizarPainel() {
+        if (!painelEl) return;
+        const statusEl = painelEl.querySelector('.i9-status');
+        const timerEl = painelEl.querySelector('.i9-timer');
+        if (!statusEl || !timerEl) return;
+
+        if (!ativo) {
+            statusEl.textContent = '● Desativado';
+            statusEl.style.color = '#ef4444';
+            timerEl.textContent = 'Clique para ativar';
+        } else if (contador > 0) {
+            statusEl.textContent = '● Avanço automático';
+            statusEl.style.color = '#22c55e';
+            timerEl.textContent = `⏱ Próximo clique em ${formatarTempo(contador)}`;
+        } else {
+            statusEl.textContent = '🔍 Buscando botão...';
+            statusEl.style.color = '#eab308';
+            timerEl.textContent = 'Aguardando aula disponível';
+        }
+    }
+
+    function criarPainel() {
+        if (painelEl) painelEl.remove();
+
+        painelEl = document.createElement('div');
+        painelEl.id = 'i9-painel';
+        painelEl.innerHTML = `
+            <div class="i9-status" style="font-weight: 600; font-size: 13px; color: #22c55e;">● Avanço automático</div>
+            <div class="i9-timer" style="font-size: 12px; color: #a0a0a0; margin-top: 2px;">⏱ Próximo clique em 2:00</div>
+        `;
+
+        Object.assign(painelEl.style, {
+            position: 'fixed', top: '80px', right: '20px',
+            background: '#1a1a2e', color: '#e0e0e0',
+            padding: '12px 16px', borderRadius: '10px',
+            fontFamily: 'Inter, -apple-system, sans-serif',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+            zIndex: '999999', cursor: 'pointer',
+            minWidth: '200px', textAlign: 'center',
+            border: '1px solid rgba(255,255,255,0.08)',
+            userSelect: 'none',
+            transition: 'border-color 0.2s ease',
+        });
+
+        painelEl.addEventListener('click', alternar);
+        document.body.appendChild(painelEl);
+        atualizarPainel();
+    }
+
+    function alternar() {
+        ativo = !ativo;
+        // ADAPTAÇÃO PARA O CONSOLE: Usa localStorage em vez de GM_setValue
+        localStorage.setItem(STATE_KEY, ativo);
+        if (ativo) {
+            contador = 0;
+            tentarClicar();
+        } else {
+            if (timer) { clearTimeout(timer); timer = null; }
+            contador = 0;
+        }
+        atualizarPainel();
+    }
+
+    function cicloContagem() {
+        if (ativo && contador > 0) {
+            contador--;
+            atualizarPainel();
+        }
+    }
+
+    // ADAPTAÇÃO PARA O CONSOLE: Removido o GM_registerMenuCommand (não existe no console)
+
+    document.addEventListener('keydown', (e) => {
+        if (e.altKey && e.key.toLowerCase() === 'n') {
+            e.preventDefault();
+            alternar();
+        }
+    });
+
+    function iniciar() {
+        if (!document.body) { setTimeout(iniciar, 500); return; }
+        criarPainel();
+        if (contadorTimer) clearInterval(contadorTimer);
+        contadorTimer = setInterval(cicloContagem, 1000);
+        if (ativo) {
+            timer = setTimeout(tentarClicar, 2000);
+        } else {
+            atualizarPainel();
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', iniciar);
+    } else {
+        iniciar();
+    }
+
+})();
